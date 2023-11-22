@@ -1,0 +1,168 @@
+
+// Ad List filter by Status = 'ENABLED', Impressions > 0 and combinedApprovalStatus is 'DISAPPROVED' or 'APPROVED (LIMITED)'
+// Impression data over 7 Days
+
+function main() {
+  var accountIterator = AdsManagerApp.accounts().get();
+  var spreadsheetId = '1ywENn3ta1VPUHsHuoi2EwwZkk7cl7-xwMG69stvzpaE';
+  var sheetName = 'r_ad_errors';
+
+  // Create or open the spreadsheet
+  var spreadsheet = SpreadsheetApp.openById(spreadsheetId);
+  var sheet = spreadsheet.getSheetByName(sheetName);
+
+  // Check if the sheet exists, create it if not
+  if (!sheet) {
+    sheet = spreadsheet.insertSheet(sheetName);
+    sheet.appendRow(['Account ID', 'Account Name', 'Campaign Name', 'Ad Group Name', 'Ad ID', 'Status', 'Impressions 7 Days', 'Impressions Previous 7 Days', 'Clicks 7 Days', 'Clicks Previous 7 Days', 'CTR 7 Days', 'CTR Previous 7 Days', 'CPC 7 Days', 'CPC Previous 7 Days', 'Cost 7 Days', 'Cost Previous 7 Days', 'Combined Approval Status', 'Ad Type']);
+  }
+
+  // Clear the sheet before processing accounts
+  sheet.getRange(2, 1, sheet.getLastRow(), sheet.getLastColumn()).clearContent();
+
+  while (accountIterator.hasNext()) {
+    var account = accountIterator.next();
+    AdsManagerApp.select(account);
+
+    try {
+      var today = new Date();
+      var sevenDaysAgo = new Date();
+      sevenDaysAgo.setDate(today.getDate() - 7);
+
+      var dateString = formatDate(sevenDaysAgo) + "," + formatDate(today);
+      var query = "SELECT CampaignName, AdGroupName, Id, Status, Impressions, Clicks, Ctr, Cost, CombinedApprovalStatus, AdType " +
+                  "FROM AD_PERFORMANCE_REPORT " +
+                  "WHERE Status = 'ENABLED' " +
+                  "DURING " + dateString;
+
+      var report = AdsApp.report(query);
+      var rows = report.rows();
+
+      while (rows.hasNext()) {
+        var row = rows.next();
+        var impressions = row['Impressions'];
+        var combinedApprovalStatus = row['CombinedApprovalStatus'];
+        var adType = row['AdType'];
+        var clicks = row['Clicks'];
+        var ctr = row['Ctr'];
+        var cost = row['Cost'];
+
+        // Filter the results
+        if (impressions > 0 || combinedApprovalStatus === 'DISAPPROVED' || combinedApprovalStatus === 'APPROVED (LIMITED)') {
+          var campaignName = row['CampaignName'];
+          var adGroupName = row['AdGroupName'];
+          var adId = row['Id'];
+          var status = row['Status'];
+
+          // Calculate additional metrics for the previous 7 days
+          var impressionsPrevious7Days = getImpressionsPrevious7Days(adId, sevenDaysAgo, today);
+          var clicksPrevious7Days = getClicksPrevious7Days(adId, sevenDaysAgo, today);
+          var ctrPrevious7Days = getCTRPrevious7Days(adId, sevenDaysAgo, today);
+          var costPrevious7Days = getCostPrevious7Days(adId, sevenDaysAgo, today);
+          var cpc7Days = clicks > 0 ? cost / clicks : 0;
+          var cpcPrevious7Days = clicksPrevious7Days > 0 ? costPrevious7Days / clicksPrevious7Days : 0;
+
+          sheet.appendRow([account.getCustomerId(), account.getName(), campaignName, adGroupName, adId, status, impressions, impressionsPrevious7Days, clicks, clicksPrevious7Days, ctr, ctrPrevious7Days, cpc7Days, cpcPrevious7Days, cost, costPrevious7Days, combinedApprovalStatus, adType]);
+        }
+      }
+
+      Logger.log('Filtered data for account ' + account.getCustomerId() + ' successfully appended to the sheet.');
+    } catch (e) {
+      Logger.log('An error occurred for account ' + account.getCustomerId() + ': ' + e.message);
+    }
+  }
+}
+
+function formatDate(date) {
+  return Utilities.formatDate(date, AdsApp.currentAccount().getTimeZone(), "yyyyMMdd");
+}
+
+
+
+function getImpressionsPrevious7Days(adId, startDate, endDate) {
+  var impressions = 0;
+  var previousStartDate = new Date(startDate.getTime());
+  previousStartDate.setDate(startDate.getDate() - 7);
+  var previousEndDate = new Date(startDate.getTime());
+  previousEndDate.setDate(startDate.getDate() - 1);
+
+  var previousDateString = formatDate(previousStartDate) + "," + formatDate(previousEndDate);
+
+  var query = "SELECT Impressions FROM AD_PERFORMANCE_REPORT " +
+              "WHERE Id = '" + adId + "' " +
+              "DURING " + previousDateString;
+
+  var report = AdsApp.report(query);
+  var rows = report.rows();
+  while (rows.hasNext()) {
+    var row = rows.next();
+    impressions += parseInt(row['Impressions']);
+  }
+  return impressions;
+}
+
+function getClicksPrevious7Days(adId, startDate, endDate) {
+  var clicks = 0;
+  var previousStartDate = new Date(startDate.getTime());
+  previousStartDate.setDate(startDate.getDate() - 7);
+  var previousEndDate = new Date(startDate.getTime());
+  previousEndDate.setDate(startDate.getDate() - 1);
+
+  var previousDateString = formatDate(previousStartDate) + "," + formatDate(previousEndDate);
+
+  var query = "SELECT Clicks FROM AD_PERFORMANCE_REPORT " +
+              "WHERE Id = '" + adId + "' " +
+              "DURING " + previousDateString;
+
+  var report = AdsApp.report(query);
+  var rows = report.rows();
+  while (rows.hasNext()) {
+    var row = rows.next();
+    clicks += parseInt(row['Clicks']);
+  }
+  return clicks;
+}
+
+function getCTRPrevious7Days(adId, startDate, endDate) {
+  var ctr = 0;
+  var previousStartDate = new Date(startDate.getTime());
+  previousStartDate.setDate(startDate.getDate() - 7);
+  var previousEndDate = new Date(startDate.getTime());
+  previousEndDate.setDate(startDate.getDate() - 1);
+
+  var previousDateString = formatDate(previousStartDate) + "," + formatDate(previousEndDate);
+
+  var query = "SELECT Ctr FROM AD_PERFORMANCE_REPORT " +
+              "WHERE Id = '" + adId + "' " +
+              "DURING " + previousDateString;
+
+  var report = AdsApp.report(query);
+  var rows = report.rows();
+  while (rows.hasNext()) {
+    var row = rows.next();
+    ctr += parseFloat(row['Ctr']);
+  }
+  return ctr;
+}
+
+function getCostPrevious7Days(adId, startDate, endDate) {
+  var cost = 0;
+  var previousStartDate = new Date(startDate.getTime());
+  previousStartDate.setDate(startDate.getDate() - 7);
+  var previousEndDate = new Date(startDate.getTime());
+  previousEndDate.setDate(startDate.getDate() - 1);
+
+  var previousDateString = formatDate(previousStartDate) + "," + formatDate(previousEndDate);
+
+  var query = "SELECT Cost FROM AD_PERFORMANCE_REPORT " +
+              "WHERE Id = '" + adId + "' " +
+              "DURING " + previousDateString;
+
+  var report = AdsApp.report(query);
+  var rows = report.rows();
+  while (rows.hasNext()) {
+    var row = rows.next();
+    cost += parseFloat(row['Cost']);
+  }
+  return cost;
+}
