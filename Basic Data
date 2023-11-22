@@ -1,0 +1,69 @@
+// Ad List filter by Status = 'ENABLED', Impressions > 0 and combinedApprovalStatus is 'DISAPPROVED' or 'APPROVED (LIMITED)'
+// Impression data over 7 Days
+
+function main() {
+  var accountIterator = AdsManagerApp.accounts().get();
+  var spreadsheetId = '1ywENn3ta1VPUHsHuoi2EwwZkk7cl7-xwMG69stvzpaE';
+  var sheetName = 'r_ad_errors';
+
+  // Create or open the spreadsheet
+  var spreadsheet = SpreadsheetApp.openById(spreadsheetId);
+  var sheet = spreadsheet.getSheetByName(sheetName);
+
+  // Check if the sheet exists, create it if not
+  if (!sheet) {
+    sheet = spreadsheet.insertSheet(sheetName);
+    sheet.appendRow(['Account ID', 'Account Name', 'Campaign Name', 'Ad Group Name', 'Ad ID', 'Status', 'Impressions', 'Clicks', 'CTR', 'Cost', 'Combined Approval Status', 'Ad Type']);
+  }
+
+  // Clear the sheet before processing accounts
+  sheet.getRange(2, 1, sheet.getLastRow(), sheet.getLastColumn()).clearContent();
+
+  while (accountIterator.hasNext()) {
+    var account = accountIterator.next();
+    AdsManagerApp.select(account);
+
+    try {
+      var today = new Date();
+      var sevenDaysAgo = new Date();
+      sevenDaysAgo.setDate(today.getDate() - 7);
+
+      var dateString = formatDate(sevenDaysAgo) + "," + formatDate(today);
+      var query = "SELECT CampaignName, AdGroupName, Id, Status, Impressions, Clicks, Ctr, Cost, CombinedApprovalStatus, AdType " +
+                  "FROM AD_PERFORMANCE_REPORT " +
+                  "WHERE Status = 'ENABLED' " +  // Corrected filter for "ENABLED" status
+                  "DURING " + dateString;
+
+      var report = AdsApp.report(query);
+      var rows = report.rows();
+
+      while (rows.hasNext()) {
+        var row = rows.next();
+        var impressions = row['Impressions'];
+        var combinedApprovalStatus = row['CombinedApprovalStatus'];
+        var adType = row['AdType'];
+
+        // Filter the results
+        if (impressions > 0 || combinedApprovalStatus === 'DISAPPROVED' || combinedApprovalStatus === 'APPROVED (LIMITED)') {
+          var campaignName = row['CampaignName'];
+          var adGroupName = row['AdGroupName'];
+          var adId = row['Id'];
+          var status = row['Status'];
+          var clicks = row['Clicks'];
+          var ctr = row['Ctr'];
+          var cost = row['Cost'];
+
+          sheet.appendRow([account.getCustomerId(), account.getName(), campaignName, adGroupName, adId, status, impressions, clicks, ctr, cost, combinedApprovalStatus, adType]);
+        }
+      }
+
+      Logger.log('Filtered data for account ' + account.getCustomerId() + ' successfully appended to the sheet.');
+    } catch (e) {
+      Logger.log('An error occurred for account ' + account.getCustomerId() + ': ' + e.message);
+    }
+  }
+}
+
+function formatDate(date) {
+  return Utilities.formatDate(date, AdsApp.currentAccount().getTimeZone(), "yyyyMMdd");
+}
